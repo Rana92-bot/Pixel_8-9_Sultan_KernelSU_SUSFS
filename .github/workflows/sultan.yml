@@ -65,7 +65,7 @@ jobs:
           git clone https://github.com/TheWildJames/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
           cd susfs4ksu
-          git checkout b5c3ada461a61c6ad033693b7a00494ead3a28fd
+          git checkout 6eeb00fd6540db63ad743b94a7e56f88d97a45fc
           cd ..
           git clone https://github.com/TheWildJames/kernel_patches.git
           git clone https://github.com/kerneltoast/${{ inputs.repo }}
@@ -82,36 +82,29 @@ jobs:
         run: |
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
+
+          # Apply SUSFS patches to kernel tree
+          echo "Applying SUSFS patches to the main kernel tree..."
           
-          echo "Applying SUSFS patches..."
-          
-          # Copy SUSFS patches
+          # Apply base SUSFS patches to kernel
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./
           cp ../susfs4ksu/kernel_patches/fs/* ./fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
-
+          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          
+          # Go to the KernelSU-Next directory for integration
           cd ./KernelSU-Next
           
-          echo "Applying next SUSFS patches..."
-          cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
-          patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
-
-          echo "Applying next SUSFS Fix patches..."
-          cp ../../kernel_patches/next/fix_apk_sign.c.patch ./
-          patch -p1 --forward --fuzz=3 < fix_apk_sign.c.patch
-          cp ../../kernel_patches/next/fix_core_hook.c.patch ./
-          patch -p1 --forward --fuzz=3 < fix_core_hook.c.patch
-          cp ../../kernel_patches/next/fix_selinux.c.patch ./
-          patch -p1 --forward --fuzz=3 < fix_selinux.c.patch
-          cp ../../kernel_patches/next/fix_ksud.c.patch ./
-          patch -p1 --forward --fuzz=3 < fix_ksud.c.patch
-          cp ../../kernel_patches/next/fix_sucompat.c.patch ./
-          patch -p1 --forward --fuzz=3 < fix_sucompat.c.patch
-          sed -i '/bool ksu_devpts_hook = false;/d' ./kernel/sucompat.c
+          echo "Applying SUSFS v1.5.8 integration patch for KernelSU-Next..."
           
-          # Change to common directory and apply SUSFS patch
+          # Copy unified integration patch for SUSFS v1.5.8
+          cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./
+
+          # Apply integration patch - should apply cleanly as it's the latest version
+          patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch
+          
+          # Apply final compatibility fix for sys.c if needed
           cd ..
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           cp ../kernel_patches/sultan/sys.c_fix.patch ./
           patch -p1 --fuzz=3 < sys.c_fix.patch
 
