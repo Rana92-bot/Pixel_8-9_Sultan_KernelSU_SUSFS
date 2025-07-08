@@ -80,17 +80,13 @@ jobs:
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
 
-          echo "Applying compatibility fix for sys.c BEFORE main patch..."
-          cp ../kernel_patches/sultan/sys.c_fix.patch ./
-          patch -p1 --fuzz=3 < sys.c_fix.patch
-
           echo "Applying base SUSFS patches to the kernel tree..."
           
           cp ../susfs4ksu/kernel_patches/fs/* ./fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
           
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch
+          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           
           echo "Applying SUSFS integration patch to KernelSU-Next..."
           
@@ -102,6 +98,9 @@ jobs:
           echo "Applying compatibility fixes..."
           
           cd ..
+
+          cp ../kernel_patches/sultan/sys.c_fix.patch ./
+          patch -p1 --fuzz=3 < sys.c_fix.patch
 
       - name: Apply KSU Hooks
         run: |
