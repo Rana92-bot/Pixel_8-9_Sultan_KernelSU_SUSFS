@@ -67,59 +67,63 @@ jobs:
           git clone https://github.com/TheWildJames/kernel_patches.git
           git clone https://github.com/kerneltoast/${{ inputs.repo }}
       
-      - name: Add KernelSU
+      - name: Add KernelSU, Prepare and Patch Kernel
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
+          echo "Entering kernel source directory: $CONFIG"
           cd "$CONFIG"
-          
+
+          # Adding KernelSU-Next
           echo "Adding KernelSU..."
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
-
-      - name: Apply SUSFS Patches
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-
-          # Apply SUSFS patches to kernel tree
-          echo "Applying SUSFS patches to the main kernel tree..."
           
-          # Apply base SUSFS patches to kernel
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./
-          cp ../susfs4ksu/kernel_patches/fs/* ./fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          # Copy SUSFS Source Files
+          echo "Copying SUSFS source files..."
+          cp ../susfs4ksu/kernel_patches/fs/susfs.c ./fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs.h ./include/linux/
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ./include/linux/
+
+          # Applying the main SUSFS patch to the kernel
+          echo "Applying main SUSFS patch set to kernel tree (ignoring expected sys.c failure)..."
+          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           
-          # Go to the KernelSU-Next directory for integration
+          # Integration of SUSFS with KernelSU-Next (FAILURES ARE EXPECTED) and their FIX
+          echo "Entering KernelSU-Next directory..."
           cd ./KernelSU-Next
           
-          echo "Applying SUSFS v1.5.8 integration patch for KernelSU-Next..."
-          
-          # Copy unified integration patch for SUSFS v1.5.8
-          cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./
+          echo "Applying original (outdated) SUSFS integration patch, failures are expected..."
+          cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
+          patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch || true
 
-          # Apply integration patch - should apply cleanly as it's the latest version
-          patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch
-          
-          # Apply final compatibility fix for sys.c if needed
+          echo "Applying official compatibility fixes for SUSFS v1.5.9..."
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_apk_sign.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_core_hook.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_selinux.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_ksud.c.patch
+          # Adding the patch for sucompat.c, which was missing in the previous version
+          if [ -f ../../kernel_patches/next/fix_sucompat.c.patch ]; then
+            patch -p1 --forward < ../../kernel_patches/next/fix_sucompat.c.patch
+          fi
+
+          # Return and apply remaining patches
+          echo "Returning to kernel root directory..."
           cd ..
-          cp ../kernel_patches/sultan/sys.c_fix.patch ./
-          patch -p1 --fuzz=3 < sys.c_fix.patch
 
-      - name: Apply KSU Hooks
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          # Apply additional patch
-          cp ../kernel_patches/next/syscall_hooks.patch ./
-          patch -p1 --fuzz=3 < ./syscall_hooks.patch
+          echo "Applying final compatibility fix for sys.c..."
+          if [ -f ../kernel_patches/sultan/sys.c_fix.patch ]; then
+              patch -p1 --fuzz=3 < ../kernel_patches/sultan/sys.c_fix.patch
+          fi
+
+          echo "Applying KSU Hooks..."
+          if [ -f ../kernel_patches/next/syscall_hooks.patch ]; then
+              cp ../kernel_patches/next/syscall_hooks.patch ./
+              patch -p1 --fuzz=3 < ./syscall_hooks.patch
+          fi
           
-      - name: Apply Hide Stuff Patches
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          # Apply additional patch
-          cp ../kernel_patches/69_hide_stuff.patch ./
-          patch -p1 -F 3 < 69_hide_stuff.patch
+          echo "Applying Hide Stuff Patches..."
+          if [ -f ../kernel_patches/69_hide_stuff.patch ]; then
+             cp ../kernel_patches/69_hide_stuff.patch ./
+             patch -p1 -F 3 < 69_hide_stuff.patch
+          fi
 
       #- name: Apply KernelSU & SUSFS Sultan Fixes
       #  run: |
