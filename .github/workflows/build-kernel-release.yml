@@ -52,9 +52,9 @@ jobs:
       REPO_OWNER: TheWildJames
       REPO_NAME: Sultan_KernelSU_SUSFS
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_NAME: "*TEST BUILD* Sultan Kernels With KernelSU Next & SUSFS v1.5.8 *TEST BUILD*"
+      RELEASE_NAME: "Sultan Kernels With KernelSU Next & SUSFS v1.5.9"
       RELEASE_NOTES: |
-        This release contains KernelSU Next and SUSFS v1.5.8
+        This release contains KernelSU Next and SUSFS v1.5.9
         
         Module: 
         -> https://github.com/sidex15/ksu_module_susfs
@@ -73,7 +73,7 @@ jobs:
       # Get the Latest Tag from GitHub
       - name: Set Fixed Tag
         run: |
-          NEW_TAG="Test"
+          NEW_TAG="1.5.9-R20"
           echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
           git tag $NEW_TAG
           git push origin $NEW_TAG
@@ -89,7 +89,7 @@ jobs:
         uses: actions/create-release@v1
         with:
           tag_name: ${{ env.NEW_TAG }}  # Use the generated tag for the release
-          prerelease: true  # Mark the release as a pre-release
+          prerelease: false  # Mark the release as a pre-release
           release_name: ${{ env.RELEASE_NAME }}  # Pass the RELEASE_NAME to the action
           body: ${{ env.RELEASE_NOTES }}  # Pass the RELEASE_NOTES to the action
         env:
