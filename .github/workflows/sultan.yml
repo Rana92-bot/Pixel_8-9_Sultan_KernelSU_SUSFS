@@ -77,36 +77,30 @@ jobs:
           echo "Adding KernelSU..."
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           
-          # --- ШАГ 2: Подготовка ядра к новой версии KernelSU ---
-          echo "Applying critical modifications for KernelSU-Next compatibility..."
-
-          # Добавляем поле susfs_task_state в структуру task_struct (файл sched.h)
-          sed -i '/ANDROID_KABI_USE(1, unsigned int saved_state);/a\	ANDROID_KABI_USE(2, u32 susfs_task_state);' ./include/linux/sched.h
-          sed -i 's/ANDROID_KABI_RESERVE(2);/ /' ./include/linux/sched.h
-
-          # Копируем ВСЕ необходимые файлы SUSFS
-          echo "Copying SUSFS files..."
+          # --- ШАГ 2: Копирование всех файлов SUSFS ---
+          echo "Copying SUSFS source files..."
           cp ../susfs4ksu/kernel_patches/fs/susfs.c ./fs/
           cp ../susfs4ksu/kernel_patches/include/linux/susfs.h ./include/linux/
           cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ./include/linux/
-          
-          # Заменяем старые определения функций в susfs_def.h на новые, совместимые с susfs_task_state
-          echo "Replacing function definitions in susfs_def.h..."
-          OLD_DEFS="static inline bool susfs_is_current_non_root_user_app_proc(void) {\n\treturn test_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n\tset_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}"
-          NEW_DEFS="#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(0)\nstatic inline bool susfs_is_current_non_root_user_app_proc(void) {\n    return current->susfs_task_state \& TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n    current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}"
-          perl -i -0777 -pe "s@${OLD_DEFS}@${NEW_DEFS}@g" ./include/linux/susfs_def.h
 
-          # --- ШАГ 3: Применение основного набора патчей SUSFS ---
+          # --- ШАГ 3: Применение основного патча SUSFS ---
           echo "Applying main SUSFS patch set (ignoring expected sys.c failure)..."
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           
-          # --- ШАГ 4: Интеграция с KernelSU-Next ---
+          # --- ШАГ 4: Интеграция SUSFS с KernelSU-Next с использованием ОФИЦИАЛЬНЫХ фиксов ---
           echo "Entering KernelSU-Next directory..."
           cd ./KernelSU-Next
-          echo "Applying SUSFS integration patch for KernelSU-Next..."
-          cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./
-          patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch
           
+          echo "Applying SUSFS integration patch..."
+          cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
+          patch -p1 --forward --fuzz=3 < 10_enable_susfs_for_ksu.patch
+
+          echo "Applying official compatibility fixes for SUSFS v1.5.9..."
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_apk_sign.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_core_hook.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_selinux.c.patch
+          patch -p1 --forward < ../../kernel_patches/next/susfs_fix_patches/v1.5.9/fix_ksud.c.patch
+
           # --- ШАГ 5: Возврат и применение остальных патчей ---
           echo "Returning to kernel root directory..."
           cd ..
