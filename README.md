@@ -1,13 +1,4 @@
 # Wild Kernels for Android
-# About this fork
-- I just tweaked the build script a bit, which updated SUSFS to version 1.5.8.
-- I've been testing it for a week, and it's running stably.
-- ‼️ The AnyKernel3 archive is the original one from WildKernels. Therefore, the info log shown in KernelFlasher during installation will be outdated, but this can be safely ignored.
-- ‼️ Kernel by Sultan (build: 07-May-2025).
-# Screenshots
----
-<img src="images/KernelSU.png" width="300"><img src="images/SusFS.png" width="300"><img src="images/SusFS2.png" width="300">
----
 
 ## Your warranty is no longer valid!
 
@@ -21,6 +12,13 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 
 ### Proceed at your own risk!
 
+---
+# About this fork
+- I just tweaked the build script a bit, which updated SUSFS to version 1.5.9-R20.
+- ‼️ Kernel by Sultan (build: 07-May-2025).
+# Screenshots
+---
+<img src="images/KSUMenu.png" width="300"><img src="images/ModuleList.png" width="300"><img src="images/SusFSFeatures.png" width="300"><img src="images/SusFSMenu.png" width="300">
 ---
 
 # Kernels:
