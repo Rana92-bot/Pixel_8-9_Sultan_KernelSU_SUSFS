@@ -72,19 +72,10 @@ jobs:
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
           
-          echo "Adding KernelSU..."
-          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
-
-      - name: Apply SUSFS Patches
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          
           # --- ШАГ 1: Подготовка ядра к новой версии KernelSU ---
           echo "Applying critical modifications for KernelSU-Next compatibility..."
 
           # Добавляем поле susfs_task_state в структуру task_struct (файл sched.h)
-          # Это исправляет ошибку 'has no member named susfs_task_state'.
           sed -i '/ANDROID_KABI_USE(1, unsigned int saved_state);/a\	ANDROID_KABI_USE(2, u32 susfs_task_state);' ./include/linux/sched.h
           sed -i 's/ANDROID_KABI_RESERVE(2);/ /' ./include/linux/sched.h
 
@@ -92,23 +83,21 @@ jobs:
           cp ../susfs4ksu/kernel_patches/fs/susfs.c ./fs/
           cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ./include/linux/
           
-          # Добавляем новые макросы и функции в susfs_def.h
-          # Это исправляет ошибку 'TASK_STRUCT_NON_ROOT_USER_APP_PROC undeclared'.
-          cat <<'EOF' >> ./include/linux/susfs_def.h
-
-          /* Определения для совместимости с последней версией KernelSU-Next */
-          #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(0)
-          static inline bool susfs_is_current_non_root_user_app_proc(void) {
-              return current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC;
-          }
-          static inline void susfs_set_current_non_root_user_app_proc(void) {
-              current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
-          }
-          EOF
+          # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+          # Заменяем старые определения функций в susfs_def.h на новые, совместимые с susfs_task_state
+          # Это исправляет ошибку 'redefinition'.
+          echo "Replacing function definitions in susfs_def.h..."
           
+          # Определяем текст для замены и новый текст
+          OLD_DEFS="static inline bool susfs_is_current_non_root_user_app_proc(void) {\n\treturn test_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n\tset_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}"
+          
+          NEW_DEFS="#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(0)\nstatic inline bool susfs_is_current_non_root_user_app_proc(void) {\n    return current->susfs_task_state \& TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n    current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}"
+
+          # Используем perl для многострочной замены. Это надежнее, чем sed.
+          perl -i -0777 -pe "s@${OLD_DEFS}@${NEW_DEFS}@g" ./include/linux/susfs_def.h
+          # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
           # --- ШАГ 2: Применение основного набора патчей SUSFS ---
-          # Конфликт с kernel/sys.c ожидается и будет проигнорирован с помощью || true,
-          # чтобы ваш последующий патч мог его исправить.
           echo "Applying main SUSFS patch set (ignoring expected sys.c failure)..."
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           
