@@ -67,68 +67,60 @@ jobs:
           git clone https://github.com/TheWildJames/kernel_patches.git
           git clone https://github.com/kerneltoast/${{ inputs.repo }}
       
-      - name: Add KernelSU
+      - name: Add KernelSU, Prepare and Patch Kernel
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
+          # --- ШАГ 0: Переход в основной каталог ядра ---
+          echo "Entering kernel source directory: $CONFIG"
           cd "$CONFIG"
-          
-          # --- ШАГ 1: Подготовка ядра к новой версии KernelSU ---
-          echo "Applying critical modifications for KernelSU-Next compatibility..."
 
-          # Добавляем поле susfs_task_state в структуру task_struct (файл sched.h)
+          # --- ШАГ 1: Добавление KernelSU-Next ---
+          echo "Adding KernelSU..."
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          
+          # --- ШАГ 2: Подготовка ядра к новой версии KernelSU ---
+          echo "Applying critical modifications for KernelSU-Next compatibility..."
           sed -i '/ANDROID_KABI_USE(1, unsigned int saved_state);/a\	ANDROID_KABI_USE(2, u32 susfs_task_state);' ./include/linux/sched.h
           sed -i 's/ANDROID_KABI_RESERVE(2);/ /' ./include/linux/sched.h
 
-          # Копируем файлы SUSFS
           cp ../susfs4ksu/kernel_patches/fs/susfs.c ./fs/
           cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ./include/linux/
           
-          # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
-          # Заменяем старые определения функций в susfs_def.h на новые, совместимые с susfs_task_state
-          # Это исправляет ошибку 'redefinition'.
           echo "Replacing function definitions in susfs_def.h..."
-          
-          # Определяем текст для замены и новый текст
           OLD_DEFS="static inline bool susfs_is_current_non_root_user_app_proc(void) {\n\treturn test_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n\tset_ti_thread_flag(¤t->thread_info, TIF_NON_ROOT_USER_APP_PROC);\n}"
-          
           NEW_DEFS="#define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(0)\nstatic inline bool susfs_is_current_non_root_user_app_proc(void) {\n    return current->susfs_task_state \& TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}\n\nstatic inline void susfs_set_current_non_root_user_app_proc(void) {\n    current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;\n}"
-
-          # Используем perl для многострочной замены. Это надежнее, чем sed.
           perl -i -0777 -pe "s@${OLD_DEFS}@${NEW_DEFS}@g" ./include/linux/susfs_def.h
-          # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
-          # --- ШАГ 2: Применение основного набора патчей SUSFS ---
+          # --- ШАГ 3: Применение основного набора патчей SUSFS ---
           echo "Applying main SUSFS patch set (ignoring expected sys.c failure)..."
           patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
           
-          # --- ШАГ 3: Интеграция с KernelSU-Next ---
+          # --- ШАГ 4: Интеграция с KernelSU-Next ---
+          echo "Entering KernelSU-Next directory..."
           cd ./KernelSU-Next
           echo "Applying SUSFS integration patch for KernelSU-Next..."
           cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./
           patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch
           
-          # --- ШАГ 4: Применение вашего исправления для sys.c ---
+          # --- ШАГ 5: Возврат и применение остальных патчей ---
+          echo "Returning to kernel root directory..."
           cd ..
+
+          echo "Applying final compatibility fix for sys.c..."
           if [ -f ../kernel_patches/sultan/sys.c_fix.patch ]; then
-              echo "Applying final compatibility fix for sys.c..."
               patch -p1 --fuzz=3 < ../kernel_patches/sultan/sys.c_fix.patch
           fi
 
-      - name: Apply KSU Hooks
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          # Apply additional patch
-          cp ../kernel_patches/next/syscall_hooks.patch ./
-          patch -p1 --fuzz=3 < ./syscall_hooks.patch
+          echo "Applying KSU Hooks..."
+          if [ -f ../kernel_patches/next/syscall_hooks.patch ]; then
+              cp ../kernel_patches/next/syscall_hooks.patch ./
+              patch -p1 --fuzz=3 < ./syscall_hooks.patch
+          fi
           
-      - name: Apply Hide Stuff Patches
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          # Apply additional patch
-          cp ../kernel_patches/69_hide_stuff.patch ./
-          patch -p1 -F 3 < 69_hide_stuff.patch
+          echo "Applying Hide Stuff Patches..."
+          if [ -f ../kernel_patches/69_hide_stuff.patch ]; then
+             cp ../kernel_patches/69_hide_stuff.patch ./
+             patch -p1 -F 3 < 69_hide_stuff.patch
+          fi
 
       #- name: Apply KernelSU & SUSFS Sultan Fixes
       #  run: |
