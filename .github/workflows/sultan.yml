@@ -79,31 +79,51 @@ jobs:
         run: |
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
+          
+          # --- ШАГ 1: Подготовка ядра к новой версии KernelSU ---
+          echo "Applying critical modifications for KernelSU-Next compatibility..."
 
-          # Apply SUSFS patches to kernel tree
-          echo "Applying SUSFS patches to the main kernel tree..."
+          # Добавляем поле susfs_task_state в структуру task_struct (файл sched.h)
+          # Это исправляет ошибку 'has no member named susfs_task_state'.
+          sed -i '/ANDROID_KABI_USE(1, unsigned int saved_state);/a\	ANDROID_KABI_USE(2, u32 susfs_task_state);' ./include/linux/sched.h
+          sed -i 's/ANDROID_KABI_RESERVE(2);/ /' ./include/linux/sched.h
+
+          # Копируем файлы SUSFS
+          cp ../susfs4ksu/kernel_patches/fs/susfs.c ./fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h ./include/linux/
           
-          # Apply base SUSFS patches to kernel
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./
-          cp ../susfs4ksu/kernel_patches/fs/* ./fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          # Добавляем новые макросы и функции в susfs_def.h
+          # Это исправляет ошибку 'TASK_STRUCT_NON_ROOT_USER_APP_PROC undeclared'.
+          cat <<'EOF' >> ./include/linux/susfs_def.h
+
+          /* Определения для совместимости с последней версией KernelSU-Next */
+          #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(0)
+          static inline bool susfs_is_current_non_root_user_app_proc(void) {
+              return current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC;
+          }
+          static inline void susfs_set_current_non_root_user_app_proc(void) {
+              current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
+          }
+          EOF
           
-          # Go to the KernelSU-Next directory for integration
+          # --- ШАГ 2: Применение основного набора патчей SUSFS ---
+          # Конфликт с kernel/sys.c ожидается и будет проигнорирован с помощью || true,
+          # чтобы ваш последующий патч мог его исправить.
+          echo "Applying main SUSFS patch set (ignoring expected sys.c failure)..."
+          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          
+          # --- ШАГ 3: Интеграция с KernelSU-Next ---
           cd ./KernelSU-Next
-          
-          echo "Applying SUSFS v1.5.8 integration patch for KernelSU-Next..."
-          
-          # Copy unified integration patch for SUSFS v1.5.8
+          echo "Applying SUSFS integration patch for KernelSU-Next..."
           cp ../../kernel_patches/next/0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch ./
-
-          # Apply integration patch - should apply cleanly as it's the latest version
           patch -p1 < 0001-kernel-implement-susfs-v1.5.8-KernelSU-Next-v1.0.8.patch
           
-          # Apply final compatibility fix for sys.c if needed
+          # --- ШАГ 4: Применение вашего исправления для sys.c ---
           cd ..
-          cp ../kernel_patches/sultan/sys.c_fix.patch ./
-          patch -p1 --fuzz=3 < sys.c_fix.patch
+          if [ -f ../kernel_patches/sultan/sys.c_fix.patch ]; then
+              echo "Applying final compatibility fix for sys.c..."
+              patch -p1 --fuzz=3 < ../kernel_patches/sultan/sys.c_fix.patch
+          fi
 
       - name: Apply KSU Hooks
         run: |
